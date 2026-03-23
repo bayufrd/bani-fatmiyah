@@ -421,8 +421,21 @@ export default function Page() {
       {/* Footer */}
       <footer className="mt-16 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
         <div className="max-w-7xl mx-auto px-6 py-8 text-center text-gray-600 dark:text-gray-400">
-          <p>© 2024 Silsilah Keluarga Besar H. Abdur Rochman (Alm) & Hajjah Fathmiyah (Almh). Semua hak dilindungi.</p>
+          <p>© 2026 Silsilah Keluarga Besar H. Abdur Rochman (Alm) & Hajjah Fathmiyah (Almh). Semua hak dilindungi.</p>
           <p className="text-sm mt-2">Dibuat dengan teknologi modern untuk melestarikan sejarah keluarga</p>
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+            <p className="text-xs">
+              Dikembangkan oleh{' '}
+              <a
+                href="https://dastrevas.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-semibold transition-colors"
+              >
+                dastrevas.coding ©
+              </a>
+            </p>
+          </div>
         </div>
       </footer>
     </div>

@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Sitemap: https://bani-fatmiyah.vercel.app/sitemap.xml
+
+User-agent: Googlebot
+Allow: /
+Priority: high
+
+User-agent: Bingbot
+Allow: /
+Priority: high
