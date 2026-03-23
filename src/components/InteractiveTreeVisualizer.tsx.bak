@@ -1,0 +1,701 @@
+'use client';
+
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { FamilyMember, familyData } from '@/data/familyData';
+import { ChevronDown, ChevronUp, Search, ZoomIn, ZoomOut, Home } from 'lucide-react';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import React from 'react';
+
+interface TreeNodePosition {
+  id: string;
+  x: number;
+  y: number;
+  member: FamilyMember;
+}
+
+interface TreeNodeWithChildren {
+  member: FamilyMember;
+  children: TreeNodeWithChildren[];
+  isExpanded: boolean;
+}
+
+function buildTreeStructure(
+  parentId: string | undefined,
+  expandedNodes: Set<string>
+): TreeNodeWithChildren | null {
+  const member = familyData.find((m) => m.id === parentId);
+  if (!member) return null;
+
+  const children = familyData
+    .filter((m) => m.parentId === parentId)
+    .map((child) => buildTreeStructure(child.id, expandedNodes))
+    .filter((child): child is TreeNodeWithChildren => child !== null);
+
+  return {
+    member,
+    children,
+    isExpanded: expandedNodes.has(parentId),
+  };
+}
+
+interface DrawTreeProps {
+  node: TreeNodeWithChildren | null;
+  x: number;
+  y: number;
+  xOffset: number;
+  positions: Map<string, TreeNodePosition>;
+  onPositionCalculated: (positions: Map<string, TreeNodePosition>) => void;
+}
+
+const NODE_WIDTH = 180;
+const NODE_HEIGHT = 120;
+const VERTICAL_GAP = 180;
+const SIBLING_GAP = 100;
+const LEAF_SIBLING_GAP = 5; // Much smaller gap for leaf nodes
+
+interface NodeWithWidth extends TreeNodeWithChildren {
+  width?: number;
+  prelimX?: number;
+  finalX?: number;
+  isLeaf?: boolean;
+}
+
+// Bottom-up approach: Calculate subtree width first, then position
+function calculateSubtreeWidth(node: NodeWithWidth): number {
+  const isLeaf = !node.isExpanded || node.children.length === 0;
+  node.isLeaf = isLeaf;
+  
+  if (isLeaf) {
+    return NODE_WIDTH;
+  }
+
+  let totalWidth = 0;
+  for (const child of node.children) {
+    totalWidth += calculateSubtreeWidth(child as NodeWithWidth);
+    totalWidth += SIBLING_GAP;
+  }
+  
+  node.width = Math.max(totalWidth - SIBLING_GAP, NODE_WIDTH);
+  return node.width;
+}
+
+// Calculate preliminary X positions (bottom-up)
+function calculatePrelimPositions(
+  node: NodeWithWidth,
+  x: number,
+  y: number,
+  positions: Map<string, TreeNodePosition>
+): void {
+  // Set current node position
+  positions.set(node.member.id, {
+    id: node.member.id,
+    x,
+    y,
+    member: node.member,
+  });
+
+  if (!node.isExpanded || node.children.length === 0) {
+    return;
+  }
+
+  // Position children horizontally
+  const childrenWidth = (node.children as NodeWithWidth[]).reduce((sum, child) => {
+    const childNode = child as NodeWithWidth;
+    const gap = childNode.isLeaf ? LEAF_SIBLING_GAP : SIBLING_GAP;
+    return sum + (childNode.width || NODE_WIDTH) + gap;
+  }, 0) - (((node.children[node.children.length - 1] as NodeWithWidth).isLeaf ? LEAF_SIBLING_GAP : SIBLING_GAP));
+
+  let currentX = x - childrenWidth / 2;
+
+  for (const child of node.children) {
+    const childNode = (child as NodeWithWidth);
+    const childWidth = childNode.width || NODE_WIDTH;
+    const gap = childNode.isLeaf ? LEAF_SIBLING_GAP : SIBLING_GAP;
+    const childCenterX = currentX + childWidth / 2;
+
+    calculatePrelimPositions(
+      childNode,
+      childCenterX,
+      y + VERTICAL_GAP,
+      positions
+    );
+
+    currentX += childWidth + gap;
+  }
+}
+
+// Helper function to get all node IDs that have children
+function getAllExpandableNodeIds(): Set<string> {
+  const expandableIds = new Set<string>();
+  familyData.forEach((member) => {
+    const hasChildren = familyData.some((m) => m.parentId === member.id);
+    if (hasChildren) {
+      expandableIds.add(member.id);
+    }
+  });
+  return expandableIds;
+}
+
+export function InteractiveTreeVisualizer() {
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
+    new Set(Array.from(getAllExpandableNodeIds()))
+  );
+  const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [positions, setPositions] = useState<Map<string, TreeNodePosition>>(
+    new Map()
+  );
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<FamilyMember[]>([]);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const transformRef = useRef<any>(null);
+  const treeContentRef = useRef<HTMLDivElement>(null);
+
+  const rootMember = useMemo(() => familyData.find((m) => m.generation === 0), []);
+
+  useEffect(() => {
+    if (!rootMember) return;
+
+    const tree = buildTreeStructure(rootMember.id, expandedNodes) as NodeWithWidth;
+    if (!tree) return;
+
+    const newPositions = new Map<string, TreeNodePosition>();
+    
+    // First pass: calculate subtree widths (bottom-up)
+    calculateSubtreeWidth(tree);
+    
+    // Second pass: calculate positions with center alignment
+    // Note: we'll use relative positions, then center in container
+    const tempPositions = new Map<string, TreeNodePosition>();
+    calculatePrelimPositions(tree, 0, 50, tempPositions);
+    
+    // Calculate bounds
+    const allPositions = Array.from(tempPositions.values());
+    if (allPositions.length > 0) {
+      const minX = Math.min(...allPositions.map((p) => p.x));
+      const maxX = Math.max(...allPositions.map((p) => p.x));
+      
+      // Re-center all positions
+      const treeWidth = maxX - minX + NODE_WIDTH;
+      const centerOffset = treeWidth / 2;
+      
+      allPositions.forEach((pos) => {
+        newPositions.set(pos.id, {
+          ...pos,
+          x: pos.x - minX + centerOffset,
+        });
+      });
+    }
+    
+    setPositions(newPositions);
+  }, [expandedNodes]);
+
+  const toggleNode = (id: string) => {
+    const newExpanded = new Set(expandedNodes);
+    if (newExpanded.has(id)) {
+      newExpanded.delete(id);
+    } else {
+      newExpanded.add(id);
+    }
+    setExpandedNodes(newExpanded);
+  };
+
+  // Search handler
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length === 0) {
+      setSearchResults([]);
+      return;
+    }
+
+    const results = familyData.filter((member) =>
+      member.name.toLowerCase().includes(query.toLowerCase())
+    );
+    setSearchResults(results);
+  };
+
+  // Navigate to member (auto zoom and scroll)
+  const navigateToMember = (member: FamilyMember) => {
+    setSelectedMember(member);
+    const memberPos = positions.get(member.id);
+    
+    if (memberPos && transformRef.current) {
+      // Center on member and zoom
+      setTimeout(() => {
+        if (transformRef.current) {
+          transformRef.current.resetTransform();
+          const selector = `[data-member-id="${member.id}"]`;
+          const element = document.querySelector(selector);
+          if (element) {
+            transformRef.current.zoomToElement(element, 1.5);
+          }
+        }
+      }, 0);
+    }
+  };
+
+  if (!rootMember) {
+    return <div>Data tidak ditemukan</div>;
+  }
+
+  const tree = buildTreeStructure(rootMember.id, expandedNodes);
+  if (!tree) return <div>Data tidak ditemukan</div>;
+
+  // Calculate SVG dimensions
+  const allPositions = Array.from(positions.values());
+  if (allPositions.length === 0) {
+    return <div>Menghitung posisi...</div>;
+  }
+
+  const maxX = Math.max(...allPositions.map((p) => p.x));
+  const maxY = Math.max(...allPositions.map((p) => p.y));
+
+  const svgWidth = Math.max(1200, maxX + NODE_WIDTH + 80);
+  const svgHeight = Math.max(800, maxY + NODE_HEIGHT + 120);
+
+  // Draw connections
+  const connections: {
+    parent: TreeNodePosition;
+    child: TreeNodePosition;
+  }[] = [];
+
+  positions.forEach((pos) => {
+    const children = familyData.filter((m) => m.parentId === pos.id);
+    children.forEach((child) => {
+      const childPos = positions.get(child.id);
+      if (childPos) {
+        connections.push({ parent: pos, child: childPos });
+      }
+    });
+  });
+
+  return (
+    <div className="w-full bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-8 transition-colors">
+      <div className="mb-8">
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+              Pohon Silsilah Keluarga Farmiyah
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300">
+              Klik nama untuk melihat detail, atau klik tombol panah untuk memperluas/menyembunyikan keturunan
+            </p>
+          </div>
+          
+          {/* Search Bar */}
+          <div className="flex items-center gap-2 w-64">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari nama..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Search Results Dropdown */}
+        {searchQuery && searchResults.length > 0 && (
+          <div className="mb-4 max-w-xl bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg shadow-lg p-2">
+            <p className="text-xs text-gray-600 dark:text-gray-400 px-2 py-1 font-semibold">
+              Ditemukan {searchResults.length} hasil
+            </p>
+            <div className="space-y-1">
+              {searchResults.slice(0, 5).map((result) => (
+                <button
+                  key={result.id}
+                  onClick={() => {
+                    navigateToMember(result);
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white font-semibold transition-colors"
+                >
+                  {result.name}
+                  {result.arabicName && <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">({result.arabicName})</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Legend */}
+        <div className="mt-4 flex gap-6 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-0.5 bg-blue-500"></div>
+            <span className="text-gray-700 dark:text-gray-300">Garis Keturunan (Sedarah)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Zoom Controls */}
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => {
+            if (transformRef.current) {
+              transformRef.current.zoomIn();
+            }
+          }}
+          className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors flex items-center gap-2"
+        >
+          <ZoomIn className="w-4 h-4" />
+          Zoom In
+        </button>
+        <button
+          onClick={() => {
+            if (transformRef.current) {
+              transformRef.current.zoomOut();
+            }
+          }}
+          className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white transition-colors flex items-center gap-2"
+        >
+          <ZoomOut className="w-4 h-4" />
+          Zoom Out
+        </button>
+        <button
+          onClick={() => {
+            if (transformRef.current) {
+              transformRef.current.resetTransform();
+            }
+          }}
+          className="p-2 rounded-lg bg-gray-500 hover:bg-gray-600 text-white transition-colors flex items-center gap-2"
+        >
+          <Home className="w-4 h-4" />
+          Reset
+        </button>
+      </div>
+
+      {/* Tree Container with TransformWrapper */}
+      <div className="border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-900 transition-colors overflow-hidden" style={{ height: '600px', width: '100%' }}>
+        <TransformWrapper
+          ref={transformRef}
+          initialScale={1}
+          initialPositionX={0}
+          initialPositionY={0}
+          wheel={{ step: 0.15 }}
+          pinch={{ step: 5 }}
+          doubleClick={{ disabled: false, step: 0.2 }}
+          panning={{ disabled: false, velocityDisabled: true }}
+          minScale={0.2}
+          maxScale={4}
+        >
+          <TransformComponent>
+            <div
+              ref={treeContentRef}
+              className="relative inline-block"
+              style={{ width: `${svgWidth}px`, height: `${svgHeight}px` }}
+            >
+          <svg
+            ref={svgRef}
+            width={svgWidth}
+            height={svgHeight}
+            className="absolute top-0 left-0 pointer-events-none"
+            style={{ margin: '0 auto', display: 'block' }}
+          >
+            {/* Draw connections - Blue lines for blood relations */}
+            {connections.map((conn, idx) => {
+              const parentX = conn.parent.x + NODE_WIDTH / 2;
+              const parentY = conn.parent.y + NODE_HEIGHT;
+              const childX = conn.child.x + NODE_WIDTH / 2;
+              const childY = conn.child.y;
+
+              const midY = (parentY + childY) / 2;
+
+              return (
+                <g key={idx}>
+                  {/* Line from parent down */}
+                  <line
+                    x1={parentX}
+                    y1={parentY}
+                    x2={parentX}
+                    y2={midY}
+                    stroke="#3b82f6"
+                    strokeWidth="2"
+                  />
+                  {/* Horizontal line */}
+                  <line
+                    x1={parentX}
+                    y1={midY}
+                    x2={childX}
+                    y2={midY}
+                    stroke="#3b82f6"
+                    strokeWidth="2"
+                  />
+                  {/* Line to child */}
+                  <line
+                    x1={childX}
+                    y1={midY}
+                    x2={childX}
+                    y2={childY}
+                    stroke="#3b82f6"
+                    strokeWidth="2"
+                  />
+                  {/* Arrow head */}
+                  <polygon
+                    points={`${childX - 6},${childY - 10} ${childX + 6},${childY - 10} ${childX},${childY}`}
+                    fill="#3b82f6"
+                  />
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Draw nodes */}
+          <div style={{ position: 'relative', width: '100%', minHeight: svgHeight }}>
+            {Array.from(positions.values()).map((pos) => {
+              const member = pos.member;
+              const hasChildren = familyData.some(
+                (m) => m.parentId === member.id
+              );
+              const isExpanded = expandedNodes.has(member.id);
+
+              return (
+                <div
+                  key={member.id}
+                  data-member-id={member.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${pos.x}px`,
+                    top: `${pos.y}px`,
+                  }}
+                  className="cursor-pointer -translate-x-1/2"
+                >
+                  <div
+                    onClick={() => setSelectedMember(member)}
+                    className={`
+                      relative p-4 rounded-xl border-2 transition-all w-52
+                      ${
+                        member.gender === 'male'
+                          ? 'bg-blue-50 border-blue-300 hover:border-blue-500 hover:shadow-lg'
+                          : 'bg-pink-50 border-pink-300 hover:border-pink-500 hover:shadow-lg'
+                      }
+                      ${
+                        selectedMember?.id === member.id
+                          ? 'ring-2 ring-purple-500 shadow-lg'
+                          : ''
+                      }
+                    `}
+                  >
+                    {/* Toggle button for parent nodes */}
+                    {hasChildren && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleNode(member.id);
+                        }}
+                        className="absolute -top-3 -right-3 bg-white border-2 border-gray-300 rounded-full w-7 h-7 flex items-center justify-center hover:bg-gray-100 transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-gray-600" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-600" />
+                        )}
+                      </button>
+                    )}
+
+                    {/* Gender indicator - Top left corner */}
+                    <div className="absolute -top-3 -left-3 text-2xl bg-white rounded-full w-8 h-8 flex items-center justify-center border-2 border-gray-300">
+                      {member.gender === 'male' ? '👨' : '👩'}
+                    </div>
+
+                    {/* Child number - Next to gender icon, only for non-Gen0 */}
+                    {member.generation > 0 && member.childNumber && (
+                      <div className="absolute -top-3 left-7 text-xs font-bold px-2 py-1 bg-blue-200 text-blue-900 rounded-full border border-blue-300">
+                        Anak ke-{member.childNumber}
+                      </div>
+                    )}
+
+                    {/* Name with wrapping, not truncate */}
+                    <h4 className="font-bold text-sm text-gray-900 break-words leading-tight min-h-8">
+                      {member.name}
+                    </h4>
+                    {member.arabicName && (
+                      <p className="text-xs text-gray-600 truncate">
+                        {member.arabicName}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      Gen {member.generation}
+                    </p>
+                    {member.birth && (
+                      <p className="text-xs text-gray-600 mt-1">
+                        {member.birth}
+                        {member.death && ` - ${member.death}`}
+                      </p>
+                    )}
+
+                    {/* Status label - moved above spouse info */}
+                    {member.status === 'deceased' && (
+                      <div className="mt-1 text-xs font-semibold px-2 py-1 rounded inline-block bg-gray-400 text-white">
+                        {member.gender === 'male' ? 'Alm' : 'Almh'}
+                      </div>
+                    )}
+
+                    {/* Spouse info */}
+                    {member.spouseName && (
+                      <div className="mt-2 pt-2 border-t border-gray-300 text-xs">
+                        <p className="text-gray-700 font-semibold">Pasangan:</p>
+                        <p className="text-gray-600 italic font-bold">{member.spouseName}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+            </div>
+          </TransformComponent>
+        </TransformWrapper>
+      </div>
+
+      {/* Detail Panel */}
+      {selectedMember && (
+        <div className="mt-8 p-6 bg-gradient-to-br from-purple-50 dark:from-purple-900/20 to-blue-50 dark:to-blue-900/20 rounded-xl border-2 border-purple-300 dark:border-purple-700 transition-colors">
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+            {selectedMember.name}
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {selectedMember.arabicName && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Nama Arab</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  {selectedMember.arabicName}
+                </p>
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Jenis Kelamin</p>
+              <p className="text-lg text-gray-900 dark:text-white mt-1">
+                {selectedMember.gender === 'male' ? 'Laki-laki' : 'Perempuan'}
+              </p>
+            </div>
+
+            {selectedMember.birth && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Tanggal Lahir</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  {selectedMember.birth}
+                </p>
+              </div>
+            )}
+
+            {selectedMember.death && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Tanggal Meninggal</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  {selectedMember.death}
+                </p>
+              </div>
+            )}
+
+            {selectedMember.spouseName && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  {selectedMember.spouseName}
+                </p>
+              </div>
+            )}
+
+            {selectedMember.address && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Alamat</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  📍 {selectedMember.address}
+                </p>
+              </div>
+            )}
+
+            {selectedMember.status && (
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Status</p>
+                <p className="text-lg text-gray-900 dark:text-white mt-1">
+                  {selectedMember.status === 'deceased' 
+                    ? (selectedMember.gender === 'male' ? 'Alm (Almarhum)' : 'Almh (Almarhumah)')
+                    : 'Hidup'
+                  }
+                </p>
+              </div>
+            )}
+
+            {selectedMember.description && (
+              <div className="md:col-span-2">
+                <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Keterangan</p>
+                <p className="text-gray-900 dark:text-gray-100 mt-1">
+                  {selectedMember.description}
+                </p>
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Generasi</p>
+              <p className="text-lg text-gray-900 dark:text-white mt-1">
+                Generasi {selectedMember.generation}
+              </p>
+            </div>
+          </div>
+
+          {/* Parents info */}
+          {selectedMember.parentId && (
+            <div className="mt-6 pt-6 border-t border-purple-300 dark:border-purple-700">
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold mb-2">Orang Tua</p>
+              {(() => {
+                const parent = familyData.find(
+                  (m) => m.id === selectedMember.parentId
+                );
+                return parent ? (
+                  <button
+                    onClick={() => setSelectedMember(parent)}
+                    className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline font-semibold"
+                  >
+                    {parent.name}
+                    {parent.arabicName && ` (${parent.arabicName})`}
+                  </button>
+                ) : null;
+              })()}
+            </div>
+          )}
+
+          {/* Children info */}
+          {(() => {
+            const children = familyData.filter(
+              (m) => m.parentId === selectedMember.id
+            );
+            if (children.length > 0) {
+              return (
+                <div className="mt-6 pt-6 border-t border-purple-300 dark:border-purple-700">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold mb-3">
+                    Anak-anak ({children.length})
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {children.map((child) => (
+                      <button
+                        key={child.id}
+                        onClick={() => setSelectedMember(child)}
+                        className="text-left p-2 rounded hover:bg-white/50 dark:hover:bg-slate-700/50 transition-colors"
+                      >
+                        <div className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold">
+                          {child.name}
+                        </div>
+                        {child.arabicName && (
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            {child.arabicName}
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
