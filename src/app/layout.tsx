@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     title: 'Silsilah Keluarga Besar H. Abdur Rochman & Hajjah Fathmiyah',
     description: 'Jelajahi sejarah dan genealogi keluarga besar H. Abdur Rochman (Alm) & Hajjah Fathmiyah (Almh) melalui pohon silsilah interaktif',
     type: 'website',
-    url: 'https://bani-fatmiyah.vercel.app',
+    url: 'https://fathmiyah.dastrevas.com',
   },
   twitter: {
     card: 'summary_large_image',
@@ -72,7 +72,7 @@ export default function RootLayout({
         <meta name="twitter:description" content="Aplikasi Silsilah Keluarga Interaktif dengan Pohon Silsilah Modern" />
         
         {/* Canonical URL */}
-        <link rel="canonical" href="https://bani-fatmiyah.vercel.app" />
+        <link rel="canonical" href="https://fathmiyah.dastrevas.com" />
       </head>
       <body className="bg-white dark:bg-slate-950 text-gray-900 dark:text-gray-100 transition-colors">
         <PWARegister />
