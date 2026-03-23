@@ -395,18 +395,18 @@ export function InteractiveTreeVisualizer() {
                     stroke="#3b82f6"
                     strokeWidth="2"
                   />
-                  {/* Line to child */}
+                  {/* Line to child - diperpanjang */}
                   <line
                     x1={childX}
                     y1={midY}
                     x2={childX}
-                    y2={childY}
+                    y2={childY + 30}
                     stroke="#3b82f6"
                     strokeWidth="2"
                   />
                   {/* Arrow head */}
                   <polygon
-                    points={`${childX - 6},${childY - 10} ${childX + 6},${childY - 10} ${childX},${childY}`}
+                    points={`${childX - 6},${childY + 20} ${childX + 6},${childY + 20} ${childX},${childY + 30}`}
                     fill="#3b82f6"
                   />
                 </g>
@@ -434,7 +434,7 @@ export function InteractiveTreeVisualizer() {
                   style={{
                     position: 'absolute',
                     left: `${pos.x + offsetX}px`,
-                    top: `${pos.y}px`,
+                    top: `${pos.y + 30}px`,
                   }}
                   className="cursor-pointer -translate-x-1/2"
                 >
