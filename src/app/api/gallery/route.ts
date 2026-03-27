@@ -16,8 +16,13 @@ export async function GET(req: NextRequest) {
     const photos = getAllGallery();
     return NextResponse.json(photos);
   } catch (error) {
+    console.error('GET /api/gallery error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch gallery', details: String(error) },
+      { 
+        error: 'Failed to fetch gallery', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
@@ -57,8 +62,13 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Photo deleted' });
   } catch (error) {
+    console.error('DELETE /api/gallery error:', error);
     return NextResponse.json(
-      { error: 'Failed to delete photo', details: String(error) },
+      { 
+        error: 'Failed to delete photo', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
@@ -85,8 +95,13 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    console.error('PUT /api/gallery error:', error);
     return NextResponse.json(
-      { error: 'Failed to update photo', details: String(error) },
+      { 
+        error: 'Failed to update photo', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }

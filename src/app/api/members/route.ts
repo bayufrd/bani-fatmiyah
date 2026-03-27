@@ -60,8 +60,13 @@ export async function GET(req: NextRequest) {
     const members = getAllMembers();
     return NextResponse.json(parseMembers(members));
   } catch (error) {
+    console.error('GET /api/members error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch members', details: String(error) },
+      { 
+        error: 'Failed to fetch members', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
@@ -105,8 +110,13 @@ export async function POST(req: NextRequest) {
     
     return NextResponse.json(member, { status: 201 });
   } catch (error) {
+    console.error('POST /api/members error:', error);
     return NextResponse.json(
-      { error: 'Failed to create member', details: String(error) },
+      { 
+        error: 'Failed to create member', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
@@ -162,8 +172,13 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(member);
   } catch (error) {
+    console.error('PUT /api/members error:', error);
     return NextResponse.json(
-      { error: 'Failed to update member', details: String(error) },
+      { 
+        error: 'Failed to update member', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
@@ -187,8 +202,13 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Member deleted' });
   } catch (error) {
+    console.error('DELETE /api/members error:', error);
     return NextResponse.json(
-      { error: 'Failed to delete member', details: String(error) },
+      { 
+        error: 'Failed to delete member', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }

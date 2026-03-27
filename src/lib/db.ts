@@ -35,56 +35,66 @@ export interface FamilyGallery {
 
 function getDb() {
   if (!db) {
-    const dbPath = path.join(process.cwd(), 'data', 'family.db');
-    db = new Database(dbPath);
-    
-    // Enable foreign keys
-    db.pragma('foreign_keys = ON');
-    
-    // Initialize table if not exists - with INTEGER primary key
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS family_members (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        nickname TEXT,
-        arabicName TEXT,
-        birth TEXT,
-        death TEXT,
-        gender TEXT,
-        generation INTEGER NOT NULL,
-        status TEXT,
-        address TEXT,
-        description TEXT,
-        childNumber INTEGER,
-        spouse TEXT,
-        parentIds TEXT,
-        photo TEXT,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS family_gallery (
-        id INTEGER PRIMARY KEY,
-        title TEXT NOT NULL,
-        photoPath TEXT NOT NULL,
-        year INTEGER NOT NULL,
-        albumTitle TEXT NOT NULL,
-        uploadedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    
-    // Migration: Add albumTitle column if it doesn't exist
     try {
-      const columns = db.prepare(`PRAGMA table_info(family_gallery)`).all();
-      const hasAlbumTitle = (columns as any[]).some(col => col.name === 'albumTitle');
+      const dbPath = path.join(process.cwd(), 'data', 'family.db');
+      console.log('🔧 Initializing database at:', dbPath);
       
-      if (!hasAlbumTitle) {
-        console.log('🔄 Migrating: Adding albumTitle column to family_gallery');
-        db.exec(`ALTER TABLE family_gallery ADD COLUMN albumTitle TEXT NOT NULL DEFAULT 'Unnamed Album'`);
-        console.log('✅ Migration complete: albumTitle column added');
+      db = new Database(dbPath);
+      console.log('✅ Database opened successfully');
+      
+      // Enable foreign keys
+      db.pragma('foreign_keys = ON');
+      
+      // Initialize table if not exists - with INTEGER primary key
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS family_members (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          nickname TEXT,
+          arabicName TEXT,
+          birth TEXT,
+          death TEXT,
+          gender TEXT,
+          generation INTEGER NOT NULL,
+          status TEXT,
+          address TEXT,
+          description TEXT,
+          childNumber INTEGER,
+          spouse TEXT,
+          parentIds TEXT,
+          photo TEXT,
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS family_gallery (
+          id INTEGER PRIMARY KEY,
+          title TEXT NOT NULL,
+          photoPath TEXT NOT NULL,
+          year INTEGER NOT NULL,
+          albumTitle TEXT NOT NULL,
+          uploadedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log('✅ Database tables initialized');
+      
+      // Migration: Add albumTitle column if it doesn't exist
+      try {
+        const columns = db.prepare(`PRAGMA table_info(family_gallery)`).all();
+        const hasAlbumTitle = (columns as any[]).some(col => col.name === 'albumTitle');
+        
+        if (!hasAlbumTitle) {
+          console.log('🔄 Migrating: Adding albumTitle column to family_gallery');
+          db.exec(`ALTER TABLE family_gallery ADD COLUMN albumTitle TEXT NOT NULL DEFAULT 'Unnamed Album'`);
+          console.log('✅ Migration complete: albumTitle column added');
+        }
+      } catch (error) {
+        console.error('Migration error:', error);
       }
     } catch (error) {
-      console.error('Migration error:', error);
+      console.error('❌ Database initialization error:', error);
+      console.error('Error details:', error instanceof Error ? error.message : String(error));
+      throw new Error(`Database initialization failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   return db;

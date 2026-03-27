@@ -78,7 +78,11 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Gallery upload error:', error);
     return NextResponse.json(
-      { error: 'Failed to upload gallery photos', details: String(error) },
+      { 
+        error: 'Failed to upload gallery photos', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
