@@ -1,18 +1,5 @@
-// Types for genealogy data
-export interface Spouse {
-  name: string;
-  notes?: string; // Keterangan tambahan (tanggal, tempat, status, dll)
-}
 
-export interface FamilyMember {
-  id: string;
-  name: string;
-  arabicName?: string;
-  birth?: string;
-  death?: string;
-  gender?: 'male' | 'female'; // Optional - fallback to male if not specified
-  parentId?: string;
-  parentIds?: string[]; // Support multiple parents (mother and father)
+const data = []; // Support multiple parents (mother and father)
   spouseIds?: string[];
   childIds?: string[]; // Children IDs for hierarchical relationships
   spouseName?: string;
@@ -4432,3 +4419,5 @@ export const familyData: FamilyMember[] = [
 ];
 
 
+;
+module.exports = { familyData: data };

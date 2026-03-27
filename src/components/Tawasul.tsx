@@ -1,34 +1,109 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
-import { FamilyNode } from './FamilyNode';
+import { useState, useEffect, useMemo } from 'react';
 import { Heart, X } from 'lucide-react';
+
+interface Spouse {
+  name?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: 'male' | 'female';
+  status?: string;
+  address?: string;
+  notes?: string;
+}
+
+interface FamilyMember {
+  id: number;
+  name: string;
+  nickname?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: string;
+  generation: number;
+  status?: string;
+  address?: string;
+  description?: string;
+  childNumber?: number;
+  parentIds?: number[];
+  spouse?: Spouse | string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export function Tawasul() {
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Filter members yang memiliki status 'deceased'
-  const deceasedMembers = useMemo(() => {
-    return familyData.filter(
-      (member) =>
-        member.status === 'deceased'
-    );
+  // Load all members from API on component mount
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadMembers();
   }, []);
 
-  const getParents = (memberId: string): FamilyMember[] => {
-    const member = familyData.find((m) => m.id === memberId);
-    if (!member) return [];
+  // Helper function to parse spouse from JSON string to object
+  const parseSpouse = (spouse: any): Spouse | undefined => {
+    if (!spouse) return undefined;
+    if (typeof spouse === 'string') {
+      try {
+        return JSON.parse(spouse);
+      } catch {
+        return undefined;
+      }
+    }
+    return spouse;
+  };
+
+  // Filter members yang memiliki status 'deceased' dan sesuai search query
+  const deceasedMembers = useMemo(() => {
+    return members.filter((member) => {
+      if (member.status !== 'deceased') return false;
+      
+      // Jika tidak ada search query, tampilkan semua
+      if (!searchQuery.trim()) return true;
+      
+      const query = searchQuery.toLowerCase();
+      
+      // Cari di nama, nama arab, deskripsi, dan alamat
+      return (
+        member.name.toLowerCase().includes(query) ||
+        (member.arabicName && member.arabicName.toLowerCase().includes(query)) ||
+        (member.description && member.description.toLowerCase().includes(query)) ||
+        (member.address && member.address.toLowerCase().includes(query)) ||
+        (member.nickname && member.nickname.toLowerCase().includes(query))
+      );
+    });
+  }, [members, searchQuery]);
+
+  const getParents = (memberId: number): FamilyMember[] => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member || !member.parentIds) return [];
     
-    const parentIds = member.parentIds || (member.parentId ? [member.parentId] : []);
-    return parentIds
-      .map((id) => familyData.find((m) => m.id === id))
+    return member.parentIds
+      .map((id) => members.find((m) => m.id === id))
       .filter((p) => p !== undefined) as FamilyMember[];
   };
 
-  const getChildren = (memberId: string): FamilyMember[] => {
-    return familyData.filter((m) => {
-      const parentIds = m.parentIds || (m.parentId ? [m.parentId] : []);
+  const getChildren = (memberId: number): FamilyMember[] => {
+    return members.filter((m) => {
+      const parentIds = m.parentIds || [];
       return parentIds.includes(memberId);
     });
   };
@@ -41,6 +116,23 @@ export function Tawasul() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tawasul</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">Doa untuk almarhum dan almarhumah</p>
         </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-gray-600 dark:text-gray-400">Loading data...</p>
+        </div>
+      ) : (
+        <>
+      {/* Search Input */}
+      <div className="mb-6">
+        <input
+          type="text"
+          placeholder="Cari nama, nama arab, atau lokasi..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full px-4 py-2 bg-gray-100 dark:bg-slate-700 text-gray-900 dark:text-white rounded-lg border border-gray-300 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-red-500 dark:focus:ring-red-400 transition-colors"
+        />
       </div>
 
       {/* Statistics */}
@@ -106,19 +198,22 @@ export function Tawasul() {
                   </div>
                 )}
 
-                {selectedMember.spouseName && (
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
-                    <p className="text-lg text-gray-900 dark:text-white mt-1">
-                      {selectedMember.spouseName}
-                    </p>
-                    {selectedMember.spouse?.notes && (
-                      <p className="text-gray-700 dark:text-gray-300 mt-1 text-sm">
-                        {selectedMember.spouse.notes}
+                {selectedMember.spouse && (() => {
+                  const spouseData = parseSpouse(selectedMember.spouse);
+                  return spouseData ? (
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
+                      <p className="text-lg text-gray-900 dark:text-white mt-1">
+                        {spouseData.name}
                       </p>
-                    )}
-                  </div>
-                )}
+                      {spouseData.notes && (
+                        <p className="text-gray-700 dark:text-gray-300 mt-1 text-sm">
+                          {spouseData.notes}
+                        </p>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
 
                 {selectedMember.address && (
                   <div>
@@ -218,12 +313,37 @@ export function Tawasul() {
       {deceasedMembers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {deceasedMembers.map((member) => (
-            <div key={member.id} onClick={() => setSelectedMember(member)}>
-              <FamilyNode
-                member={member}
-                isSelected={selectedMember?.id === member.id}
-                onClick={setSelectedMember}
-              />
+            <div
+              key={member.id}
+              onClick={() => setSelectedMember(member)}
+              className="p-4 bg-gradient-to-br from-red-50 dark:from-red-900/20 to-pink-50 dark:to-pink-900/20 rounded-lg border border-red-200 dark:border-red-800 cursor-pointer hover:shadow-lg dark:hover:shadow-red-900/30 transition-all hover:scale-105"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex-1">
+                  {member.name}
+                </h3>
+                <span className="text-2xl">
+                  {member.gender === 'male' ? '👨' : '👩'}
+                </span>
+              </div>
+
+              {member.arabicName && (
+                <p className="text-sm text-gray-700 dark:text-gray-300 font-arabic mb-2">
+                  {member.arabicName}
+                </p>
+              )}
+
+              {member.death && (
+                <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                  📅 {member.death}
+                </p>
+              )}
+
+              {member.generation !== undefined && (
+                <p className="text-xs text-gray-600 dark:text-gray-400">
+                  Gen {member.generation}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -231,6 +351,8 @@ export function Tawasul() {
         <div className="text-center py-12">
           <p className="text-gray-600 dark:text-gray-400">Tidak ada data almarhum/almarhumah</p>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -1,19 +1,81 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
-import { FamilyNode } from './FamilyNode';
+import { useState, useEffect, useMemo } from 'react';
 import { Users, X } from 'lucide-react';
+
+interface Spouse {
+  name?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: 'male' | 'female';
+  status?: string;
+  address?: string;
+  notes?: string;
+}
+
+interface FamilyMember {
+  id: number;
+  name: string;
+  nickname?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: string;
+  generation: number;
+  status?: string;
+  address?: string;
+  description?: string;
+  childNumber?: number;
+  parentIds?: number[];
+  spouse?: Spouse | string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export function GenerasiSilsilah() {
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
   const [expandedGenerations, setExpandedGenerations] = useState<Set<number>>(
     new Set()
   );
 
+  // Load all members from API on component mount
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadMembers();
+  }, []);
+
+  // Helper function to parse spouse from JSON string to object
+  const parseSpouse = (spouse: any): Spouse | undefined => {
+    if (!spouse) return undefined;
+    if (typeof spouse === 'string') {
+      try {
+        return JSON.parse(spouse);
+      } catch {
+        return undefined;
+      }
+    }
+    return spouse;
+  };
+
   // Group by generation
   const groupedByGeneration = useMemo(() => {
-    return familyData.reduce(
+    return members.reduce(
       (acc, member) => {
         if (!acc[member.generation]) {
           acc[member.generation] = [];
@@ -23,7 +85,7 @@ export function GenerasiSilsilah() {
       },
       {} as Record<number, FamilyMember[]>
     );
-  }, []);
+  }, [members]);
 
   const toggleGeneration = (generation: number) => {
     const newExpanded = new Set(expandedGenerations);
@@ -35,19 +97,18 @@ export function GenerasiSilsilah() {
     setExpandedGenerations(newExpanded);
   };
 
-  const getParents = (memberId: string): FamilyMember[] => {
-    const member = familyData.find((m) => m.id === memberId);
-    if (!member) return [];
+  const getParents = (memberId: number): FamilyMember[] => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member || !member.parentIds) return [];
     
-    const parentIds = member.parentIds || (member.parentId ? [member.parentId] : []);
-    return parentIds
-      .map((id) => familyData.find((m) => m.id === id))
+    return member.parentIds
+      .map((id) => members.find((m) => m.id === id))
       .filter((p) => p !== undefined) as FamilyMember[];
   };
 
-  const getChildren = (memberId: string): FamilyMember[] => {
-    return familyData.filter((m) => {
-      const parentIds = m.parentIds || (m.parentId ? [m.parentId] : []);
+  const getChildren = (memberId: number): FamilyMember[] => {
+    return members.filter((m) => {
+      const parentIds = m.parentIds || [];
       return parentIds.includes(memberId);
     });
   };
@@ -62,7 +123,13 @@ export function GenerasiSilsilah() {
         </div>
       </div>
 
-      {/* Modal Dialog */}
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <p className="text-gray-600 dark:text-gray-400">Loading data...</p>
+        </div>
+      ) : (
+        <>
+          {/* Modal Dialog */}
       {selectedMember && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -118,19 +185,22 @@ export function GenerasiSilsilah() {
                   </div>
                 )}
 
-                {selectedMember.spouseName && (
-                  <div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
-                    <p className="text-lg text-gray-900 dark:text-white mt-1">
-                      {selectedMember.spouseName}
-                    </p>
-                    {selectedMember.spouse?.notes && (
-                      <p className="text-gray-700 dark:text-gray-300 mt-1 text-sm">
-                        {selectedMember.spouse.notes}
+                {selectedMember.spouse && (() => {
+                  const spouseData = parseSpouse(selectedMember.spouse);
+                  return spouseData ? (
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
+                      <p className="text-lg text-gray-900 dark:text-white mt-1">
+                        {spouseData.name}
                       </p>
-                    )}
-                  </div>
-                )}
+                      {spouseData.notes && (
+                        <p className="text-gray-700 dark:text-gray-300 mt-1 text-sm">
+                          {spouseData.notes}
+                        </p>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
 
                 {selectedMember.address && (
                   <div>
@@ -269,11 +339,14 @@ export function GenerasiSilsilah() {
                               {member.arabicName}
                             </p>
                           )}
-                          {member.spouseName && (
-                            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                              + {member.spouseName}
-                            </p>
-                          )}
+                          {member.spouse && (() => {
+                            const spouseData = parseSpouse(member.spouse);
+                            return spouseData?.name ? (
+                              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                                + {spouseData.name}
+                              </p>
+                            ) : null;
+                          })()}
                         </div>
                       </div>
                     </button>
@@ -282,7 +355,9 @@ export function GenerasiSilsilah() {
               )}
             </div>
           ))}
-      </div>
+        </div>
+        </>
+      )}
     </div>
   );
 }

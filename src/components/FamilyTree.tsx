@@ -1,9 +1,38 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
-import { FamilyNode } from './FamilyNode';
 import { ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { FamilyNode } from './FamilyNode';
+
+interface Spouse {
+  name?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: 'male' | 'female';
+  status?: string;
+  address?: string;
+  notes?: string;
+}
+
+interface FamilyMember {
+  id: number;
+  name: string;
+  nickname?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: string;
+  generation: number;
+  status?: string;
+  address?: string;
+  description?: string;
+  childNumber?: number;
+  parentIds?: number[];
+  spouse?: Spouse | string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export function FamilyTree() {
   const [expandedGenerations, setExpandedGenerations] = useState<Set<number>>(
@@ -11,22 +40,60 @@ export function FamilyTree() {
   );
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
   const generationRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // Load members from API on mount
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadMembers();
+  }, []);
+
+  // Helper function to parse spouse from JSON string to object
+  const parseSpouse = (spouse: any): Spouse | undefined => {
+    if (!spouse) return undefined;
+    if (typeof spouse === 'string') {
+      try {
+        return JSON.parse(spouse);
+      } catch {
+        return undefined;
+      }
+    }
+    return spouse;
+  };
 
   const filteredMembers = useMemo(() => {
     if (!searchQuery.trim()) {
-      return familyData;
+      return members;
     }
 
     const query = searchQuery.toLowerCase();
-    return familyData.filter(
-      (member) =>
-        member.name.toLowerCase().includes(query) ||
-        member.arabicName?.toLowerCase().includes(query) ||
-        member.description?.toLowerCase().includes(query) ||
-        member.spouseName?.toLowerCase().includes(query)
+    return members.filter(
+      (member) => {
+        const spouseData = parseSpouse(member.spouse);
+        return (
+          member.name.toLowerCase().includes(query) ||
+          member.arabicName?.toLowerCase().includes(query) ||
+          member.description?.toLowerCase().includes(query) ||
+          spouseData?.name?.toLowerCase().includes(query)
+        );
+      }
     );
-  }, [searchQuery]);
+  }, [searchQuery, members]);
 
   const toggleGeneration = (generation: number) => {
     const newExpanded = new Set(expandedGenerations);
@@ -49,19 +116,18 @@ export function FamilyTree() {
     {} as Record<number, FamilyMember[]>
   );
 
-  const getParents = (memberId: string): FamilyMember[] => {
-    const member = familyData.find((m) => m.id === memberId);
-    if (!member) return [];
+  const getParents = (memberId: number): FamilyMember[] => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member || !member.parentIds) return [];
     
-    const parentIds = member.parentIds || (member.parentId ? [member.parentId] : []);
-    return parentIds
-      .map((id) => familyData.find((m) => m.id === id))
+    return member.parentIds
+      .map((id) => members.find((m) => m.id === id))
       .filter((p) => p !== undefined) as FamilyMember[];
   };
 
-  const getChildren = (memberId: string): FamilyMember[] => {
-    return familyData.filter((m) => {
-      const parentIds = m.parentIds || (m.parentId ? [m.parentId] : []);
+  const getChildren = (memberId: number): FamilyMember[] => {
+    return members.filter((m) => {
+      const parentIds = m.parentIds || [];
       return parentIds.includes(memberId);
     });
   };
@@ -89,6 +155,16 @@ export function FamilyTree() {
       }
     }
   }, [selectedMember, expandedGenerations]);
+
+  if (loading) {
+    return (
+      <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+        <div className="flex items-center justify-center py-12">
+          <p className="text-gray-600">Loading data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 p-8">
@@ -196,6 +272,18 @@ export function FamilyTree() {
                 <p className="text-lg font-semibold text-gray-900">{selectedMember.death}</p>
               </div>
             )}
+            {selectedMember.spouse && (() => {
+              const spouseData = parseSpouse(selectedMember.spouse);
+              return spouseData?.name ? (
+                <div>
+                  <p className="text-sm text-gray-600">Pasangan</p>
+                  <p className="text-lg font-semibold text-gray-900">{spouseData.name}</p>
+                  {spouseData.notes && (
+                    <p className="text-sm text-gray-600 mt-1">{spouseData.notes}</p>
+                  )}
+                </div>
+              ) : null;
+            })()}
             <div>
               <p className="text-sm text-gray-600">Generasi</p>
               <p className="text-lg font-semibold text-gray-900">{selectedMember.generation}</p>

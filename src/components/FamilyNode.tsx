@@ -1,13 +1,55 @@
 'use client';
 
-import { FamilyMember } from '@/data/familyData';
 import { Users, Heart } from 'lucide-react';
+
+interface Spouse {
+  name?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: 'male' | 'female';
+  status?: string;
+  address?: string;
+  notes?: string;
+}
+
+interface FamilyMember {
+  id: number;
+  name: string;
+  nickname?: string;
+  arabicName?: string;
+  birth?: string;
+  death?: string;
+  gender?: string;
+  generation: number;
+  status?: string;
+  address?: string;
+  description?: string;
+  childNumber?: number;
+  parentIds?: number[];
+  spouse?: Spouse | string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 interface FamilyNodeProps {
   member: FamilyMember;
   onClick?: (member: FamilyMember) => void;
   isSelected?: boolean;
 }
+
+// Helper to parse spouse
+const parseSpouse = (spouse: any): Spouse | undefined => {
+  if (!spouse) return undefined;
+  if (typeof spouse === 'string') {
+    try {
+      return JSON.parse(spouse);
+    } catch {
+      return undefined;
+    }
+  }
+  return spouse;
+};
 
 export function FamilyNode({ member, onClick, isSelected = false }: FamilyNodeProps) {
   const genderColor = member.gender === 'male' ? 'bg-blue-50' : 'bg-pink-50';
@@ -27,6 +69,8 @@ export function FamilyNode({ member, onClick, isSelected = false }: FamilyNodePr
   const statusLabel = isDeceased 
     ? (member.gender === 'male' ? 'Alm' : 'Almh')
     : '';
+
+  const spouseData = parseSpouse(member.spouse);
 
   return (
     <div
@@ -57,9 +101,9 @@ export function FamilyNode({ member, onClick, isSelected = false }: FamilyNodePr
             <p className="text-sm text-gray-600 mt-1">{member.arabicName}</p>
           )}
           {ageText && <p className="text-xs text-gray-500 mt-1">{ageText}</p>}
-          {member.spouseName && (
+          {spouseData?.name && (
             <p className="text-xs text-gray-600 mt-1">
-              <span className="font-semibold">Spouse:</span> {member.spouseName}
+              <span className="font-semibold">Spouse:</span> {spouseData.name}
             </p>
           )}
           {member.address && (
