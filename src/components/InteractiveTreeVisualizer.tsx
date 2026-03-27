@@ -642,13 +642,16 @@ export function InteractiveTreeVisualizer() {
               </div>
             )}
 
-            {selectedMember.spouseName && (
+            {selectedMember.spouse && (
               <div>
                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
                 <p className="text-sm sm:text-lg text-gray-900 dark:text-white mt-1">
-                  {selectedMember.spouseName}
+                  {typeof selectedMember.spouse === 'string' 
+                    ? selectedMember.spouse
+                    : selectedMember.spouse?.name || 'N/A'
+                  }
                 </p>
-                {selectedMember.spouse?.notes && (
+                {typeof selectedMember.spouse === 'object' && selectedMember.spouse?.notes && (
                   <p className="text-gray-700 dark:text-gray-300 mt-1 text-xs sm:text-sm">
                     {selectedMember.spouse.notes}
                   </p>
