@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMember, initDb } from '@/lib/db';
+import { createMember, initDb, seedDatabaseIfEmpty } from '@/lib/db';
 import { familyData } from '@/data/familyData';
 
 initDb();
@@ -50,8 +50,36 @@ export async function POST(req: NextRequest) {
       total: familyData.length,
     });
   } catch (error) {
+    console.error('POST /api/members/import error:', error);
     return NextResponse.json(
-      { error: 'Failed to import data', details: String(error) },
+      { 
+        error: 'Failed to import data', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// GET endpoint untuk manual trigger seed
+export async function GET(req: NextRequest) {
+  try {
+    console.log('🔄 Manually triggering database seed...');
+    seedDatabaseIfEmpty();
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Database seeding completed or already has data'
+    });
+  } catch (error) {
+    console.error('GET /api/members/import error:', error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to seed database', 
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+      },
       { status: 500 }
     );
   }
