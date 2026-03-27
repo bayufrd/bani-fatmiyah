@@ -578,11 +578,16 @@ export function InteractiveTreeVisualizer() {
                     )}
 
                     {/* Spouse info */}
-                    {member.spouseName && (
+                    {member.spouse && (
                       <div className="mt-2 pt-2 border-t border-gray-300 text-xs">
                         <p className="text-gray-700 font-semibold">Pasangan:</p>
-                        <p className="text-gray-600 italic font-bold">{member.spouseName}</p>
-                        {member.spouse?.notes && (
+                        <p className="text-gray-600 italic font-bold">
+                          {typeof member.spouse === 'string' 
+                            ? member.spouse
+                            : member.spouse?.name || 'N/A'
+                          }
+                        </p>
+                        {typeof member.spouse === 'object' && member.spouse?.notes && (
                           <p className="text-gray-600 text-xs mt-1">{member.spouse.notes}</p>
                         )}
                       </div>
