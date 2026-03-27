@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllMembers, getMemberById, createMember, updateMember, deleteMember, searchMembers, initDb } from '@/lib/db';
+import { getAllMembers, getMemberById, createMember, updateMember, deleteMember, searchMembers, getMembersByGeneration, initDb } from '@/lib/db';
 
 // Initialize database on startup
 initDb();
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (generation) {
-      const members = require('@/lib/db').getMembersByGeneration(parseInt(generation));
+      const members = getMembersByGeneration(parseInt(generation));
       return NextResponse.json(parseMembers(members));
     }
 
