@@ -91,7 +91,7 @@ function calculatePrelimPositions(
   node: NodeWithWidth,
   x: number,
   y: number,
-  positions: Map<string, TreeNodePosition>
+  positions: Map<number, TreeNodePosition>
 ): void {
   // Set current node position
   positions.set(node.member.id, {
