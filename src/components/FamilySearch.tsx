@@ -1,42 +1,72 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
+import { useState, useMemo, useEffect } from 'react';
+import type { FamilyMember } from '@/lib/db';
 import { FamilyNode } from './FamilyNode';
 import { Search } from 'lucide-react';
 
 export function FamilySearch() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [allMembers, setAllMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load members from database via API
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setAllMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMembers();
+  }, []);
 
   const filteredMembers = useMemo(() => {
     if (!searchQuery.trim()) {
-      return familyData;
+      return allMembers;
     }
 
     const query = searchQuery.toLowerCase();
-    return familyData.filter(
+    return allMembers.filter(
       (member) =>
         member.name.toLowerCase().includes(query) ||
         member.arabicName?.toLowerCase().includes(query) ||
-        member.description?.toLowerCase().includes(query) ||
-        member.spouseName?.toLowerCase().includes(query)
+        member.description?.toLowerCase().includes(query)
     );
-  }, [searchQuery]);
+  }, [searchQuery, allMembers]);
 
-  const getParents = (memberId: string): FamilyMember[] => {
-    const member = familyData.find((m) => m.id === memberId);
-    if (!member) return [];
+  const getParents = (memberId: number): FamilyMember[] => {
+    const member = allMembers.find((m) => m.id === memberId);
+    if (!member || !member.parentIds) return [];
     
-    const parentIds = member.parentIds || (member.parentId ? [member.parentId] : []);
+    const parentIds = Array.isArray(member.parentIds) 
+      ? member.parentIds 
+      : typeof member.parentIds === 'string'
+        ? JSON.parse(member.parentIds)
+        : [];
+    
     return parentIds
-      .map((id) => familyData.find((m) => m.id === id))
+      .map((id: number) => allMembers.find((m) => m.id === id))
       .filter((p) => p !== undefined) as FamilyMember[];
   };
 
-  const getChildren = (memberId: string): FamilyMember[] => {
-    return familyData.filter((m) => {
-      const parentIds = m.parentIds || (m.parentId ? [m.parentId] : []);
+  const getChildren = (memberId: number): FamilyMember[] => {
+    return allMembers.filter((m) => {
+      if (!m.parentIds) return false;
+      const parentIds = Array.isArray(m.parentIds) 
+        ? m.parentIds 
+        : typeof m.parentIds === 'string'
+          ? JSON.parse(m.parentIds)
+          : [];
       return parentIds.includes(memberId);
     });
   };
@@ -50,15 +80,22 @@ export function FamilySearch() {
         <Search className="absolute left-4 top-3.5 w-5 h-5 text-gray-400 dark:text-gray-500" />
         <input
           type="text"
-          placeholder="Cari nama, nama arab, pasangan, atau deskripsi..."
+          placeholder="Cari nama, nama arab, atau deskripsi..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 dark:focus:border-purple-400 transition-colors"
+          disabled={loading}
+          className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-purple-500 dark:focus:border-purple-400 transition-colors disabled:opacity-50"
         />
       </div>
 
-      {/* Detailed View - Moved to top */}
-      {selectedMember && (
+      {loading ? (
+        <div className="text-center py-12">
+          <p className="text-gray-600 dark:text-gray-400">Memuat data anggota keluarga...</p>
+        </div>
+      ) : (
+        <>
+          {/* Detailed View - Moved to top */}
+          {selectedMember && (
         <div className="mb-8 p-6 bg-gradient-to-br from-purple-50 dark:from-purple-900/20 to-blue-50 dark:to-blue-900/20 rounded-xl border-2 border-purple-300 dark:border-purple-700 transition-colors">
           <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">
             {selectedMember.name}
@@ -99,17 +136,15 @@ export function FamilySearch() {
               </div>
             )}
 
-            {selectedMember.spouseName && (
+            {selectedMember.spouse && (
               <div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 font-semibold">Pasangan</p>
                 <p className="text-lg text-gray-900 dark:text-white mt-1">
-                  {selectedMember.spouseName}
+                  {typeof selectedMember.spouse === 'string' 
+                    ? selectedMember.spouse
+                    : selectedMember.spouse?.name || 'N/A'
+                  }
                 </p>
-                {selectedMember.spouse?.notes && (
-                  <p className="text-gray-700 dark:text-gray-300 mt-1 text-sm">
-                    {selectedMember.spouse.notes}
-                  </p>
-                )}
               </div>
             )}
 
@@ -225,6 +260,8 @@ export function FamilySearch() {
         <div className="text-center py-12">
           <p className="text-gray-600 dark:text-gray-400">Tidak ada anggota keluarga yang sesuai dengan pencarian</p>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
+import type { FamilyMember } from '@/lib/db';
 import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 
 interface TreeNodePosition {
-  id: string;
+  id: number;
   x: number;
   y: number;
   member: FamilyMember;
@@ -18,15 +18,24 @@ interface TreeNodeWithChildren {
 }
 
 function buildTreeStructure(
-  parentId: string | undefined,
-  expandedNodes: Set<string>
+  parentId: number | undefined,
+  expandedNodes: Set<number>,
+  allMembers: FamilyMember[]
 ): TreeNodeWithChildren | null {
-  const member = familyData.find((m) => m.id === parentId);
+  const member = allMembers.find((m) => m.id === parentId);
   if (!member) return null;
 
-  const children = familyData
-    .filter((m) => m.parentId === parentId)
-    .map((child) => buildTreeStructure(child.id, expandedNodes))
+  const children = allMembers
+    .filter((m) => {
+      if (!m.parentIds) return false;
+      const parentIds = Array.isArray(m.parentIds) 
+        ? m.parentIds 
+        : typeof m.parentIds === 'string'
+          ? JSON.parse(m.parentIds)
+          : [];
+      return parentIds.includes(parentId);
+    })
+    .map((child) => buildTreeStructure(child.id, expandedNodes, allMembers))
     .filter((child): child is TreeNodeWithChildren => child !== null);
 
   return {
@@ -41,8 +50,8 @@ interface DrawTreeProps {
   x: number;
   y: number;
   xOffset: number;
-  positions: Map<string, TreeNodePosition>;
-  onPositionCalculated: (positions: Map<string, TreeNodePosition>) => void;
+  positions: Map<number, TreeNodePosition>;
+  onPositionCalculated: (positions: Map<number, TreeNodePosition>) => void;
 }
 
 const NODE_WIDTH = 180;
@@ -123,10 +132,18 @@ function calculatePrelimPositions(
 }
 
 // Helper function to get all node IDs that have children
-function getAllExpandableNodeIds(): Set<string> {
-  const expandableIds = new Set<string>();
-  familyData.forEach((member) => {
-    const hasChildren = familyData.some((m) => m.parentId === member.id);
+function getAllExpandableNodeIds(allMembers: FamilyMember[]): Set<number> {
+  const expandableIds = new Set<number>();
+  allMembers.forEach((member) => {
+    const hasChildren = allMembers.some((m) => {
+      if (!m.parentIds) return false;
+      const parentIds = Array.isArray(m.parentIds) 
+        ? m.parentIds 
+        : typeof m.parentIds === 'string'
+          ? JSON.parse(m.parentIds)
+          : [];
+      return parentIds.includes(member.id);
+    });
     if (hasChildren) {
       expandableIds.add(member.id);
     }
@@ -135,28 +152,49 @@ function getAllExpandableNodeIds(): Set<string> {
 }
 
 export function InteractiveTreeVisualizer() {
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
-    new Set(Array.from(getAllExpandableNodeIds()))
-  );
+  const [allMembers, setAllMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(new Set());
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
-  const [positions, setPositions] = useState<Map<string, TreeNodePosition>>(
+  const [positions, setPositions] = useState<Map<number, TreeNodePosition>>(
     new Map()
   );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<FamilyMember[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const nodeRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
+  const nodeRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
 
-  const rootMember = familyData.find((m) => m.generation === 0);
+  // Load members from database
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setAllMembers(data);
+          // Expand all nodes initially
+          setExpandedNodes(getAllExpandableNodeIds(data));
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMembers();
+  }, []);
+
+  const rootMember = allMembers.find((m) => m.generation === 0 || m.generation === 1);
 
   useEffect(() => {
     if (!rootMember) return;
 
-    const tree = buildTreeStructure(rootMember.id, expandedNodes) as NodeWithWidth;
+    const tree = buildTreeStructure(rootMember.id, expandedNodes, allMembers) as NodeWithWidth;
     if (!tree) return;
 
-    const newPositions = new Map<string, TreeNodePosition>();
+    const newPositions = new Map<number, TreeNodePosition>();
     const containerWidth = containerRef.current?.offsetWidth || 1000;
     const centerX = containerWidth / 2;
 
@@ -166,7 +204,7 @@ export function InteractiveTreeVisualizer() {
     // Second pass: calculate positions
     calculatePrelimPositions(tree, centerX, 50, newPositions);
     setPositions(newPositions);
-  }, [expandedNodes, rootMember]);
+  }, [expandedNodes, rootMember, allMembers]);
 
   // Scroll to center on initial load
   useEffect(() => {
@@ -193,7 +231,7 @@ export function InteractiveTreeVisualizer() {
     }
   }, []);
 
-  const toggleNode = (id: string) => {
+  const toggleNode = (id: number) => {
     const newExpanded = new Set(expandedNodes);
     if (newExpanded.has(id)) {
       newExpanded.delete(id);
@@ -213,10 +251,9 @@ export function InteractiveTreeVisualizer() {
     }
 
     const lowerQuery = query.toLowerCase();
-    const results = familyData.filter(member =>
+    const results = allMembers.filter(member =>
       member.name.toLowerCase().includes(lowerQuery) ||
       (member.arabicName && member.arabicName.toLowerCase().includes(lowerQuery)) ||
-      (member.spouseName && member.spouseName.toLowerCase().includes(lowerQuery)) ||
       (member.description && member.description.toLowerCase().includes(lowerQuery))
     );
     
@@ -227,18 +264,31 @@ export function InteractiveTreeVisualizer() {
   const focusOnMember = (member: FamilyMember) => {
     // Expand all parent nodes to make the member visible
     const newExpanded = new Set(expandedNodes);
-    let currentId: string | undefined = member.id;
+    let currentIds: number[] = member.parentIds && Array.isArray(member.parentIds) 
+      ? member.parentIds 
+      : typeof member.parentIds === 'string'
+        ? JSON.parse(member.parentIds)
+        : [];
     
-    // Expand all ancestors
-    while (currentId) {
-      const currentMember = familyData.find(m => m.id === currentId);
-      if (currentMember) {
-        newExpanded.add(currentMember.id);
-        currentId = currentMember.parentId;
-      } else {
-        break;
-      }
-    }
+    // Expand all ancestors recursively
+    const expandAncestors = (ids: number[]) => {
+      ids.forEach((id) => {
+        newExpanded.add(id);
+        const parent = allMembers.find((m) => m.id === id);
+        if (parent && parent.parentIds) {
+          const parentIds = Array.isArray(parent.parentIds) 
+            ? parent.parentIds 
+            : typeof parent.parentIds === 'string'
+              ? JSON.parse(parent.parentIds)
+              : [];
+          if (parentIds.length > 0) {
+            expandAncestors(parentIds);
+          }
+        }
+      });
+    };
+    
+    expandAncestors(currentIds);
     
     setExpandedNodes(newExpanded);
     setSelectedMember(member);
@@ -261,11 +311,15 @@ export function InteractiveTreeVisualizer() {
     }, 100);
   };
 
+  if (loading) {
+    return <div className="text-center py-8">Memuat data pohon silsilah...</div>;
+  }
+
   if (!rootMember) {
     return <div>Data tidak ditemukan</div>;
   }
 
-  const tree = buildTreeStructure(rootMember.id, expandedNodes);
+  const tree = buildTreeStructure(rootMember.id, expandedNodes, allMembers);
   if (!tree) return <div>Data tidak ditemukan</div>;
 
   // Calculate SVG dimensions with better padding for large trees
@@ -284,7 +338,15 @@ export function InteractiveTreeVisualizer() {
   }[] = [];
 
   positions.forEach((pos) => {
-    const children = familyData.filter((m) => m.parentId === pos.id);
+    const children = allMembers.filter((m) => {
+      if (!m.parentIds) return false;
+      const parentIds = Array.isArray(m.parentIds) 
+        ? m.parentIds 
+        : typeof m.parentIds === 'string'
+          ? JSON.parse(m.parentIds)
+          : [];
+      return parentIds.includes(pos.id);
+    });
     children.forEach((child) => {
       const childPos = positions.get(child.id);
       if (childPos) {
@@ -418,9 +480,15 @@ export function InteractiveTreeVisualizer() {
           <div style={{ position: 'relative', width: '100%', minHeight: svgHeight }}>
             {Array.from(positions.values()).map((pos) => {
               const member = pos.member;
-              const hasChildren = familyData.some(
-                (m) => m.parentId === member.id
-              );
+              const hasChildren = allMembers.some((m) => {
+                if (!m.parentIds) return false;
+                const parentIds = Array.isArray(m.parentIds) 
+                  ? m.parentIds 
+                  : typeof m.parentIds === 'string'
+                    ? JSON.parse(m.parentIds)
+                    : [];
+                return parentIds.includes(member.id);
+              });
               const isExpanded = expandedNodes.has(member.id);
 
               return (
@@ -622,21 +690,32 @@ export function InteractiveTreeVisualizer() {
           </div>
 
           {/* Parents info */}
-          {selectedMember.parentId && (
+          {selectedMember.parentIds && selectedMember.parentIds.length > 0 && (
             <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-purple-300 dark:border-purple-700">
               <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 font-semibold mb-2">Orang Tua</p>
               {(() => {
-                const parent = familyData.find(
-                  (m) => m.id === selectedMember.parentId
-                );
-                return parent ? (
-                  <button
-                    onClick={() => setSelectedMember(parent)}
-                    className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline font-semibold"
-                  >
-                    {parent.name}
-                    {parent.arabicName && ` (${parent.arabicName})`}
-                  </button>
+                const parentIds = Array.isArray(selectedMember.parentIds) 
+                  ? selectedMember.parentIds 
+                  : typeof selectedMember.parentIds === 'string'
+                    ? JSON.parse(selectedMember.parentIds)
+                    : [];
+                const parents = parentIds
+                  .map((id: number) => allMembers.find((m) => m.id === id))
+                  .filter((p) => p !== undefined);
+                
+                return parents.length > 0 ? (
+                  <div className="space-y-2">
+                    {parents.map((parent) => (
+                      <button
+                        key={parent.id}
+                        onClick={() => setSelectedMember(parent)}
+                        className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline font-semibold block"
+                      >
+                        {parent.name}
+                        {parent.arabicName && ` (${parent.arabicName})`}
+                      </button>
+                    ))}
+                  </div>
                 ) : null;
               })()}
             </div>
@@ -644,9 +723,15 @@ export function InteractiveTreeVisualizer() {
 
           {/* Children info */}
           {(() => {
-            const children = familyData.filter(
-              (m) => m.parentId === selectedMember.id
-            );
+            const children = allMembers.filter((m) => {
+              if (!m.parentIds) return false;
+              const parentIds = Array.isArray(m.parentIds) 
+                ? m.parentIds 
+                : typeof m.parentIds === 'string'
+                  ? JSON.parse(m.parentIds)
+                  : [];
+              return parentIds.includes(selectedMember.id);
+            });
             if (children.length > 0) {
               return (
                 <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-purple-300 dark:border-purple-700">

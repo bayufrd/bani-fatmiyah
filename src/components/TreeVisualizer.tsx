@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { FamilyMember, familyData } from '@/data/familyData';
+import { useState, useMemo, useEffect } from 'react';
+import type { FamilyMember } from '@/lib/db';
 import { FamilyNode } from './FamilyNode';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -9,9 +9,10 @@ interface TreeNodeProps {
   member: FamilyMember;
   depth: number;
   isExpanded: boolean;
-  onToggle: (id: string) => void;
+  onToggle: (id: number) => void;
   selectedMember: FamilyMember | null;
   onSelectMember: (member: FamilyMember) => void;
+  allMembers: FamilyMember[];
 }
 
 function TreeMemberNode({
@@ -21,10 +22,19 @@ function TreeMemberNode({
   onToggle,
   selectedMember,
   onSelectMember,
+  allMembers,
 }: TreeNodeProps) {
   const children = useMemo(
-    () => familyData.filter((m) => m.parentId === member.id),
-    [member.id]
+    () => allMembers.filter((m) => {
+      if (!m.parentIds) return false;
+      const parentIds = Array.isArray(m.parentIds) 
+        ? m.parentIds 
+        : typeof m.parentIds === 'string'
+          ? JSON.parse(m.parentIds)
+          : [];
+      return parentIds.includes(member.id);
+    }),
+    [member.id, allMembers]
   );
 
   const hasChildren = children.length > 0;
@@ -74,6 +84,7 @@ function TreeMemberNode({
                 onToggle={onToggle}
                 selectedMember={selectedMember}
                 onSelectMember={onSelectMember}
+                allMembers={allMembers}
               />
             </div>
           ))}
@@ -84,12 +95,33 @@ function TreeMemberNode({
 }
 
 export function TreeVisualizer() {
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
-    new Set(['farmiyah-1'])
+  const [expandedNodes, setExpandedNodes] = useState<Set<number>>(
+    new Set([1])
   );
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
+  const [allMembers, setAllMembers] = useState<FamilyMember[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const toggleNode = (id: string) => {
+  // Load members from database
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const response = await fetch('/api/members');
+        if (response.ok) {
+          const data = await response.json();
+          setAllMembers(data);
+        }
+      } catch (error) {
+        console.error('Failed to load members:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMembers();
+  }, []);
+
+  const toggleNode = (id: number) => {
     const newExpanded = new Set(expandedNodes);
     if (newExpanded.has(id)) {
       newExpanded.delete(id);
@@ -99,7 +131,11 @@ export function TreeVisualizer() {
     setExpandedNodes(newExpanded);
   };
 
-  const rootMember = familyData.find((m) => m.generation === 1);
+  const rootMember = allMembers.find((m) => m.generation === 1);
+
+  if (loading) {
+    return <div className="text-center py-8">Memuat data pohon silsilah...</div>;
+  }
 
   if (!rootMember) {
     return <div>Data tidak ditemukan</div>;
@@ -126,6 +162,7 @@ export function TreeVisualizer() {
             onToggle={toggleNode}
             selectedMember={selectedMember}
             onSelectMember={setSelectedMember}
+            allMembers={allMembers}
           />
         </div>
       </div>
@@ -190,18 +227,28 @@ export function TreeVisualizer() {
           </div>
 
           {/* Parents info */}
-          {selectedMember.parentId && (
+          {selectedMember.parentIds && selectedMember.parentIds.length > 0 && (
             <div className="mt-6 pt-6 border-t border-gray-300">
               <p className="text-sm text-gray-600 font-semibold mb-2">Orang Tua</p>
               {(() => {
-                const parent = familyData.find(
-                  (m) => m.id === selectedMember.parentId
-                );
-                return parent ? (
-                  <p className="text-gray-900">
-                    {parent.name}
-                    {parent.arabicName && ` (${parent.arabicName})`}
-                  </p>
+                const parentIds = Array.isArray(selectedMember.parentIds) 
+                  ? selectedMember.parentIds 
+                  : typeof selectedMember.parentIds === 'string'
+                    ? JSON.parse(selectedMember.parentIds)
+                    : [];
+                const parents = parentIds
+                  .map((id: number) => allMembers.find((m) => m.id === id))
+                  .filter((p) => p !== undefined);
+                
+                return parents.length > 0 ? (
+                  <div className="space-y-2">
+                    {parents.map((parent) => (
+                      <p key={parent.id} className="text-gray-900">
+                        {parent.name}
+                        {parent.arabicName && ` (${parent.arabicName})`}
+                      </p>
+                    ))}
+                  </div>
                 ) : null;
               })()}
             </div>
@@ -209,9 +256,15 @@ export function TreeVisualizer() {
 
           {/* Children info */}
           {(() => {
-            const children = familyData.filter(
-              (m) => m.parentId === selectedMember.id
-            );
+            const children = allMembers.filter((m) => {
+              if (!m.parentIds) return false;
+              const parentIds = Array.isArray(m.parentIds) 
+                ? m.parentIds 
+                : typeof m.parentIds === 'string'
+                  ? JSON.parse(m.parentIds)
+                  : [];
+              return parentIds.includes(selectedMember.id);
+            });
             if (children.length > 0) {
               return (
                 <div className="mt-6 pt-6 border-t border-gray-300">
