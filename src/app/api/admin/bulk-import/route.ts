@@ -1,4 +1,8 @@
-import Database from 'better-sqlite3';
+/// <reference types="node" />
+export const runtime = 'nodejs';
+import initSqlJs from 'sql.js';
+import fs from 'fs';
+import { Buffer } from 'buffer';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { familyData } from '@/data/familyData';
@@ -6,36 +10,34 @@ import { familyData } from '@/data/familyData';
 export async function POST(request: NextRequest) {
   try {
     const dbPath = path.join(process.cwd(), 'data', 'family.db');
-    const db = new Database(dbPath);
+    const SQL = await initSqlJs();
+    let db;
+    if (fs.existsSync(dbPath)) {
+      const filebuffer = fs.readFileSync(dbPath);
+      db = new SQL.Database(filebuffer);
+    } else {
+      db = new SQL.Database();
+    }
 
     // Clear dan recreate dengan INTEGER primary key
-    db.exec(`
-      DROP TABLE IF EXISTS family_members;
-      CREATE TABLE family_members (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        arabicName TEXT,
-        birth TEXT,
-        death TEXT,
-        gender TEXT,
-        generation INTEGER NOT NULL,
-        status TEXT,
-        address TEXT,
-        description TEXT,
-        childNumber INTEGER,
-        spouse TEXT,
-        parentIds TEXT,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    const stmt = db.prepare(`
-      INSERT INTO family_members (
-        id, name, arabicName, birth, death, gender, generation, status, 
-        address, description, childNumber, spouse, parentIds
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    db.run(`DROP TABLE IF EXISTS family_members;`);
+    db.run(`CREATE TABLE family_members (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      arabicName TEXT,
+      birth TEXT,
+      death TEXT,
+      gender TEXT,
+      generation INTEGER NOT NULL,
+      status TEXT,
+      address TEXT,
+      description TEXT,
+      childNumber INTEGER,
+      spouse TEXT,
+      parentIds TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    );`);
 
     // Create ID mapping
     const idMapping: Record<string, number> = {};
@@ -64,7 +66,10 @@ export async function POST(request: NextRequest) {
           parentIdsArray = [idMapping[m.parentId]];
         }
 
-        stmt.run(
+        db.run(`INSERT INTO family_members (
+          id, name, arabicName, birth, death, gender, generation, status, 
+          address, description, childNumber, spouse, parentIds
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
           numericId,
           m.name,
           m.arabicName || null,
@@ -78,14 +83,16 @@ export async function POST(request: NextRequest) {
           m.childNumber || null,
           m.spouse ? JSON.stringify(m.spouse) : null,
           parentIdsArray.length > 0 ? JSON.stringify(parentIdsArray) : null
-        );
+        ]);
         success++;
       } catch (e) {
         errors.push(`${m.id}: ${String(e)}`);
       }
     }
 
-    db.close();
+    // Persist DB to file
+    const data = db.export();
+    fs.writeFileSync(dbPath, Buffer.from(data));
 
     console.log(`✅ Imported ${success}/${familyData.length} members`);
     if (errors.length > 0) {

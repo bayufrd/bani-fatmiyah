@@ -9,13 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
     "lucide-react": "^0.321.0",
     "next": "^14.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-zoom-pan-pinch": "^3.7.0",
-    "sqlite3": "^6.0.1"
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
