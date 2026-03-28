@@ -9,11 +9,11 @@ export async function GET(req: NextRequest) {
     const year = searchParams.get('year');
 
     if (year) {
-      const photos = getGalleryByYear(parseInt(year));
+      const photos = await getGalleryByYear(parseInt(year));
       return NextResponse.json(photos);
     }
 
-    const photos = getAllGallery();
+    const photos = await getAllGallery();
     return NextResponse.json(photos);
   } catch (error) {
     console.error('GET /api/gallery error:', error);
@@ -40,7 +40,7 @@ export async function DELETE(req: NextRequest) {
     const photoId = parseInt(id);
 
     // Get photo info before deleting
-    const photos = getAllGallery();
+    const photos = await getAllGallery();
     const photo = photos.find(p => p.id === photoId);
 
     if (!photo) {
@@ -54,7 +54,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Delete from database
-    const success = deleteGalleryPhoto(photoId);
+    const success = await deleteGalleryPhoto(photoId);
 
     if (!success) {
       return NextResponse.json({ error: 'Failed to delete photo' }, { status: 500 });
@@ -85,7 +85,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const photoId = parseInt(id);
-    const updated = updateGalleryPhoto(photoId, {
+    const updated = await updateGalleryPhoto(photoId, {
       title: data.title || undefined,
     });
 

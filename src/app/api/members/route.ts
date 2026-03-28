@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAllMembers, getMemberById, createMember, updateMember, deleteMember, searchMembers, getMembersByGeneration, initDb } from '@/lib/db';
 
 // Initialize database on startup
-initDb();
+initDb().catch(console.error);
 
 export async function GET(req: NextRequest) {
   try {
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 
     if (id) {
       const numId = parseInt(id);
-      const member = getMemberById(numId);
+      const member = await getMemberById(numId);
       if (!member) {
         return NextResponse.json({ error: 'Member not found' }, { status: 404 });
       }
@@ -48,16 +48,16 @@ export async function GET(req: NextRequest) {
     }
 
     if (search) {
-      const results = searchMembers(search);
+      const results = await searchMembers(search);
       return NextResponse.json(parseMembers(results));
     }
 
     if (generation) {
-      const members = getMembersByGeneration(parseInt(generation));
+      const members = await getMembersByGeneration(parseInt(generation));
       return NextResponse.json(parseMembers(members));
     }
 
-    const members = getAllMembers();
+    const members = await getAllMembers();
     return NextResponse.json(parseMembers(members));
   } catch (error) {
     console.error('GET /api/members error:', error);
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       data.spouse = JSON.stringify(data.spouse);
     }
     
-    const member = createMember(data);
+    const member = await createMember(data);
     
     // Parse parentIds back to array for response
     if (member.parentIds && typeof member.parentIds === 'string') {
@@ -146,7 +146,7 @@ export async function PUT(req: NextRequest) {
       data.spouse = JSON.stringify(data.spouse);
     }
     
-    const member = updateMember(id, data);
+    const member = await updateMember(id, data);
 
     if (!member) {
       return NextResponse.json({ error: 'Member not found' }, { status: 404 });
@@ -194,7 +194,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     const id = parseInt(idStr);
-    const success = deleteMember(id);
+    const success = await deleteMember(id);
 
     if (!success) {
       return NextResponse.json({ error: 'Member not found' }, { status: 404 });

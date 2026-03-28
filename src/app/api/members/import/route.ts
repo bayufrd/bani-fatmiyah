@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createMember, initDb, seedDatabaseIfEmpty } from '@/lib/db';
 import { familyData } from '@/data/familyData';
 
-initDb();
+initDb().catch(console.error);
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
           if (parentIds.length === 0) parentIds = undefined;
         }
 
-        createMember({
+        await createMember({
           name: member.name,
           arabicName: member.arabicName,
           birth: member.birth,

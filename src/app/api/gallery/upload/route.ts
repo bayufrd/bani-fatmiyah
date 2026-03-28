@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
       // Create database entry
       const photoPath = `/gallery/${year}_${safeFolderName}/${safeFileName}`;
-      const galleryPhoto = addGalleryPhoto({
+      const galleryPhoto = await addGalleryPhoto({
         title: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
         photoPath,
         year: yearNum,

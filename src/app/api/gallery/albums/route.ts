@@ -18,7 +18,7 @@ export async function GET() {
     const albumsByYear = new Map<number, Set<string>>();
 
     // Get albums from database (only those with actual photos)
-    const galleryPhotos = getAllGallery();
+    const galleryPhotos = await getAllGallery();
     galleryPhotos.forEach((photo) => {
       if (photo.albumTitle) {
         if (!albumsByYear.has(photo.year)) {
