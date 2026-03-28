@@ -1,4 +1,4 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,17 +13,28 @@ const module_temp = { exports: {} };
 eval(arrayContent.replace('export const familyData: FamilyMember[] = ', 'const familyData = '));
 const oldFamilyData = eval('familyData');
 
-function seedDatabase() {
+async function seedDatabase() {
   const dataDir = path.join(__dirname, '../data');
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
   const dbPath = path.join(dataDir, 'family.db');
-  const db = new Database(dbPath);
+  
+  // Initialize sql.js
+  const SQL = await initSqlJs();
+  
+  // Load existing db or create new
+  let db;
+  if (fs.existsSync(dbPath)) {
+    const fileBuffer = fs.readFileSync(dbPath);
+    db = new SQL.Database(fileBuffer);
+  } else {
+    db = new SQL.Database();
+  }
 
   // Create table
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS family_members (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -46,21 +57,19 @@ function seedDatabase() {
   `);
 
   // Clear existing data
-  db.prepare('DELETE FROM family_members').run();
+  db.run('DELETE FROM family_members');
 
   console.log(`📥 Importing ${oldFamilyData.length} members...`);
-
-  const stmt = db.prepare(`
-    INSERT INTO family_members (
-      id, name, arabicName, birth, death, gender, generation, status, 
-      address, description, childNumber, spouseName, parentIds, spouseIds, childIds, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `);
 
   let count = 0;
   for (const member of oldFamilyData) {
     try {
-      stmt.run(
+      db.run(`
+        INSERT INTO family_members (
+          id, name, arabicName, birth, death, gender, generation, status, 
+          address, description, childNumber, spouseName, parentIds, spouseIds, childIds, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
         member.id,
         member.name,
         member.arabicName || null,
@@ -76,12 +85,17 @@ function seedDatabase() {
         member.parentIds ? JSON.stringify(member.parentIds) : null,
         member.spouseIds ? JSON.stringify(member.spouseIds) : null,
         member.childIds ? JSON.stringify(member.childIds) : null
-      );
+      ]);
       count++;
     } catch (err) {
       console.error(`❌ Error importing ${member.id}:`, err.message);
     }
   }
+
+  // Save database to file
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(dbPath, buffer);
 
   console.log(`✅ Successfully imported ${count}/${oldFamilyData.length} members!`);
   console.log(`📊 Database file: ${dbPath}`);

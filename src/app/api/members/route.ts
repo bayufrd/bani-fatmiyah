@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllMembers, getMemberById, createMember, updateMember, deleteMember, searchMembers, getMembersByGeneration, initDb } from '@/lib/db';
-
-// Initialize database on startup
-initDb().catch(console.error);
+import { getAllMembers, getMemberById, createMember, updateMember, deleteMember, searchMembers, getMembersByGeneration } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
   try {

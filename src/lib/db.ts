@@ -1,10 +1,10 @@
 /// <reference types="node" />
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import path from 'path';
 import fs from 'fs';
 
-let db: SqlJsDatabase | null = null;
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+// Dynamic import for sql.js to avoid webpack bundling issues
+let db: any = null;
+let SQL: any = null;
 
 export interface FamilyMember {
   id: number;
@@ -64,12 +64,13 @@ function saveDb() {
   }
 }
 
-async function getDb(): Promise<SqlJsDatabase> {
+async function getDb(): Promise<any> {
   if (db) return db;
 
   try {
-    // Initialize sql.js
+    // Dynamic import sql.js to avoid webpack issues
     if (!SQL) {
+      const initSqlJs = (await import('sql.js')).default;
       SQL = await initSqlJs();
     }
 

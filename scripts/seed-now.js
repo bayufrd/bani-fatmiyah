@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Direct seeder - import familyData langsung dari compiled TS
+ * Using sql.js (pure JavaScript SQLite)
  */
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 
@@ -47,35 +48,7 @@ if (fs.existsSync(dbPath)) {
   const backup = dbPath + '.backup.' + Date.now();
   fs.copyFileSync(dbPath, backup);
   console.log(`💾 Backed up existing database to: ${backup}`);
-  // Don't delete - just let sqlite overwrite it
 }
-
-const db = new Database(dbPath);
-
-console.log('\n📝 Creating table...\n');
-
-db.exec(`
-  DROP TABLE IF EXISTS family_members;
-  CREATE TABLE family_members (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    arabicName TEXT,
-    birth TEXT,
-    death TEXT,
-    gender TEXT,
-    generation INTEGER NOT NULL,
-    status TEXT,
-    address TEXT,
-    description TEXT,
-    childNumber INTEGER,
-    spouseName TEXT,
-    parentIds TEXT,
-    spouseIds TEXT,
-    childIds TEXT,
-    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-  )
-`);
 
 // Actual data - copy dari familyData.ts array
 // Ini adalah workaround karena require TypeScript langsung susah
@@ -118,67 +91,105 @@ const FAMILY_DATA = [
   },
 ];
 
-console.log(`📥 Importing ${FAMILY_DATA.length} members...\n`);
+async function seedDatabase() {
+  // Initialize sql.js
+  const SQL = await initSqlJs();
+  
+  // Create new database
+  const db = new SQL.Database();
 
-const stmt = db.prepare(`
-  INSERT INTO family_members (
-    id, name, arabicName, birth, death, gender, generation, status, 
-    address, description, childNumber, spouseName, parentIds, spouseIds, childIds
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
+  console.log('\n📝 Creating table...\n');
 
-let success = 0;
-let failed = 0;
+  db.run(`
+    CREATE TABLE family_members (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      arabicName TEXT,
+      birth TEXT,
+      death TEXT,
+      gender TEXT,
+      generation INTEGER NOT NULL,
+      status TEXT,
+      address TEXT,
+      description TEXT,
+      childNumber INTEGER,
+      spouseName TEXT,
+      parentIds TEXT,
+      spouseIds TEXT,
+      childIds TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-for (const member of FAMILY_DATA) {
-  try {
-    stmt.run(
-      member.id,
-      member.name,
-      member.arabicName || null,
-      member.birth || null,
-      member.death || null,
-      member.gender || null,
-      member.generation,
-      member.status || null,
-      member.address || null,
-      member.description || null,
-      member.childNumber || null,
-      member.spouseName || null,
-      member.parentIds || null,
-      member.spouseIds || null,
-      member.childIds || null
-    );
-    success++;
-  } catch (err) {
-    console.error(`❌ Failed: ${member.name} - ${err.message}`);
-    failed++;
+  console.log(`📥 Importing ${FAMILY_DATA.length} members...\n`);
+
+  let success = 0;
+  let failed = 0;
+
+  for (const member of FAMILY_DATA) {
+    try {
+      db.run(`
+        INSERT INTO family_members (
+          id, name, arabicName, birth, death, gender, generation, status, 
+          address, description, childNumber, spouseName, parentIds, spouseIds, childIds
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        member.id,
+        member.name,
+        member.arabicName || null,
+        member.birth || null,
+        member.death || null,
+        member.gender || null,
+        member.generation,
+        member.status || null,
+        member.address || null,
+        member.description || null,
+        member.childNumber || null,
+        member.spouseName || null,
+        member.parentIds || null,
+        member.spouseIds || null,
+        member.childIds || null
+      ]);
+      success++;
+    } catch (err) {
+      console.error(`❌ Failed: ${member.name} - ${err.message}`);
+      failed++;
+    }
   }
+
+  // Save database to file
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(dbPath, buffer);
+
+  const fileSize = fs.statSync(dbPath).size;
+  const sizeKB = (fileSize / 1024).toFixed(2);
+
+  console.log(`\n✅ Import Complete!\n`);
+  console.log(`📊 Imported: ${success}/${FAMILY_DATA.length} members`);
+  console.log(`💾 Database: ${dbPath}`);
+  console.log(`📈 Size: ${sizeKB} KB\n`);
+
+  if (failed > 0) {
+    console.log(`⚠️  Failed: ${failed} members`);
+  }
+
+  // Verify
+  console.log('🔍 Verifying...\n');
+  const countResult = db.exec('SELECT COUNT(*) as count FROM family_members');
+  const count = countResult.length > 0 ? countResult[0].values[0][0] : 0;
+  
+  const sampleResult = db.exec('SELECT name, generation FROM family_members LIMIT 3');
+  
+  console.log(`✅ Verified: ${count} members in database\n`);
+  console.log(`📋 Sample:`);
+  if (sampleResult.length > 0) {
+    sampleResult[0].values.forEach(row => console.log(`   • ${row[0]} (Gen ${row[1]})`));
+  }
+  console.log('');
+
+  db.close();
 }
 
-const fileSize = fs.statSync(dbPath).size;
-const sizeKB = (fileSize / 1024).toFixed(2);
-
-console.log(`\n✅ Import Complete!\n`);
-console.log(`📊 Imported: ${success}/${FAMILY_DATA.length} members`);
-console.log(`💾 Database: ${dbPath}`);
-console.log(`📈 Size: ${sizeKB} KB\n`);
-
-if (failed > 0) {
-  console.log(`⚠️  Failed: ${failed} members`);
-}
-
-db.close();
-
-// Verify
-console.log('🔍 Verifying...\n');
-const db2 = new Database(dbPath);
-const count = db2.prepare('SELECT COUNT(*) as count FROM family_members').get();
-const sample = db2.prepare('SELECT name, generation FROM family_members LIMIT 3').all();
-
-console.log(`✅ Verified: ${count.count} members in database\n`);
-console.log(`📋 Sample:`);
-sample.forEach(m => console.log(`   • ${m.name} (Gen ${m.generation})`));
-console.log('');
-
-db2.close();
+seedDatabase();

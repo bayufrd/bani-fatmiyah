@@ -2,10 +2,11 @@
 /**
  * Bulk Import v3 - Manual object construction
  * Baca file TS dan extract data dengan regex state machine
+ * Using sql.js (pure JavaScript SQLite)
  */
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 
 console.log('\n🔍 Extracting data dari familyData.ts...\n');
 
@@ -74,90 +75,105 @@ console.log(`✅ Extracted ${objects.length} objects\n`);
 
 // Setup database
 const dbPath = path.join(__dirname, '../data/family.db');
-const db = new Database(dbPath);
 
-console.log('🔄 Creating database...\n');
+async function importV3() {
+  // Initialize sql.js
+  const SQL = await initSqlJs();
+  
+  // Create new database
+  const db = new SQL.Database();
 
-db.exec(`
-  DROP TABLE IF EXISTS family_members;
-  CREATE TABLE family_members (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    arabicName TEXT,
-    birth TEXT,
-    death TEXT,
-    gender TEXT,
-    generation INTEGER NOT NULL,
-    status TEXT,
-    address TEXT,
-    description TEXT,
-    childNumber INTEGER,
-    spouseName TEXT,
-    parentIds TEXT,
-    spouseIds TEXT,
-    childIds TEXT,
-    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+  console.log('🔄 Creating database...\n');
 
-const stmt = db.prepare(`
-  INSERT INTO family_members (
-    id, name, arabicName, birth, death, gender, generation, status, 
-    address, description, childNumber, spouseName, parentIds, spouseIds, childIds
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`);
+  db.run(`
+    CREATE TABLE family_members (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      arabicName TEXT,
+      birth TEXT,
+      death TEXT,
+      gender TEXT,
+      generation INTEGER NOT NULL,
+      status TEXT,
+      address TEXT,
+      description TEXT,
+      childNumber INTEGER,
+      spouseName TEXT,
+      parentIds TEXT,
+      spouseIds TEXT,
+      childIds TEXT,
+      createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-console.log(`📥 Importing ${objects.length} members...\n`);
+  console.log(`📥 Importing ${objects.length} members...\n`);
 
-let success = 0;
-let failed = 0;
+  let success = 0;
+  let failed = 0;
 
-for (const m of objects) {
-  try {
-    stmt.run(
-      m.id,
-      m.name,
-      m.arabicName || null,
-      m.birth || null,
-      m.death || null,
-      m.gender || null,
-      m.generation,
-      m.status || null,
-      m.address || null,
-      m.description || null,
-      m.childNumber || null,
-      m.spouseName || null,
-      Array.isArray(m.parentIds) ? JSON.stringify(m.parentIds) : (m.parentIds ? JSON.stringify([m.parentIds]) : null),
-      Array.isArray(m.spouseIds) ? JSON.stringify(m.spouseIds) : (m.spouseIds ? JSON.stringify([m.spouseIds]) : null),
-      Array.isArray(m.childIds) ? JSON.stringify(m.childIds) : (m.childIds ? JSON.stringify([m.childIds]) : null)
-    );
-    success++;
-  } catch (err) {
-    failed++;
+  for (const m of objects) {
+    try {
+      db.run(`
+        INSERT INTO family_members (
+          id, name, arabicName, birth, death, gender, generation, status, 
+          address, description, childNumber, spouseName, parentIds, spouseIds, childIds
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        m.id,
+        m.name,
+        m.arabicName || null,
+        m.birth || null,
+        m.death || null,
+        m.gender || null,
+        m.generation,
+        m.status || null,
+        m.address || null,
+        m.description || null,
+        m.childNumber || null,
+        m.spouseName || null,
+        Array.isArray(m.parentIds) ? JSON.stringify(m.parentIds) : (m.parentIds ? JSON.stringify([m.parentIds]) : null),
+        Array.isArray(m.spouseIds) ? JSON.stringify(m.spouseIds) : (m.spouseIds ? JSON.stringify([m.spouseIds]) : null),
+        Array.isArray(m.childIds) ? JSON.stringify(m.childIds) : (m.childIds ? JSON.stringify([m.childIds]) : null)
+      ]);
+      success++;
+    } catch (err) {
+      failed++;
+    }
   }
+
+  // Save database to file
+  const data = db.export();
+  const buffer = Buffer.from(data);
+  fs.writeFileSync(dbPath, buffer);
+
+  const size = (fs.statSync(dbPath).size / 1024).toFixed(2);
+
+  console.log(`\n✅ IMPORT COMPLETE!\n`);
+  console.log(`📊 Results:`);
+  console.log(`   ✓ Success: ${success}`);
+  console.log(`   ✗ Failed: ${failed}`);
+  console.log(`   📈 Size: ${size} KB\n`);
+
+  // Verify
+  const countResult = db.exec('SELECT COUNT(*) as count FROM family_members');
+  const count = countResult.length > 0 ? countResult[0].values[0][0] : 0;
+  
+  const byGenResult = db.exec(`
+    SELECT generation, COUNT(*) as count 
+    FROM family_members 
+    GROUP BY generation 
+    ORDER BY generation
+  `);
+
+  console.log(`✅ Total: ${count} members\n`);
+  console.log('📊 Distribution:');
+  if (byGenResult.length > 0) {
+    byGenResult[0].values.forEach(row => console.log(`   Gen ${row[0]}: ${row[1]}`));
+  }
+  console.log('');
+
+  db.close();
 }
 
-const size = (fs.statSync(dbPath).size / 1024).toFixed(2);
-
-console.log(`\n✅ IMPORT COMPLETE!\n`);
-console.log(`📊 Results:`);
-console.log(`   ✓ Success: ${success}`);
-console.log(`   ✗ Failed: ${failed}`);
-console.log(`   📈 Size: ${size} KB\n`);
-
-// Verify
-const count = db.prepare('SELECT COUNT(*) as count FROM family_members').get();
-const byGen = db.prepare(`
-  SELECT generation, COUNT(*) as count 
-  FROM family_members 
-  GROUP BY generation 
-  ORDER BY generation
-`).all();
-
-console.log(`✅ Total: ${count.count} members\n`);
-console.log('📊 Distribution:');
-byGen.forEach(g => console.log(`   Gen ${g.generation}: ${g.count}`));
-console.log('');
-
-db.close();
+importV3();

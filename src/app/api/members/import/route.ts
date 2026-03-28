@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMember, initDb, seedDatabaseIfEmpty } from '@/lib/db';
+import { createMember, seedDatabaseIfEmpty } from '@/lib/db';
 import { familyData } from '@/data/familyData';
-
-initDb().catch(console.error);
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,7 +64,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     console.log('🔄 Manually triggering database seed...');
-    seedDatabaseIfEmpty();
+    await seedDatabaseIfEmpty();
     
     return NextResponse.json({
       success: true,
@@ -77,8 +75,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       { 
         error: 'Failed to seed database', 
-        details: error instanceof Error ? error.message : String(error),
-        stack: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.stack : undefined) : undefined
+        details: error instanceof Error ? error.message : String(error)
       },
       { status: 500 }
     );
